@@ -240,8 +240,9 @@ func (d *Dispatcher) Run(ctx context.Context) error {
 			}
 			if len(clusters) == 1 {
 				heartbeatPeriod, err := gogotypes.DurationFromProto(clusters[0].Spec.Dispatcher.HeartbeatPeriod)
-				if err == nil && heartbeatPeriod > 0 {
+				if err == nil && heartbeatPeriod > 0 && heartbeatPeriod != d.config.HeartbeatPeriod {
 					d.config.HeartbeatPeriod = heartbeatPeriod
+					d.nodes.updatePeriod(d.config.HeartbeatPeriod, d.config.HeartbeatEpsilon, d.config.GracePeriodMultiplier)
 				}
 				if clusters[0].NetworkBootstrapKeys != nil {
 					d.networkBootstrapKeys = clusters[0].NetworkBootstrapKeys

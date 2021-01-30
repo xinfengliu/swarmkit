@@ -28,6 +28,7 @@ import (
 	"github.com/docker/swarmkit/manager/drivers"
 	"github.com/docker/swarmkit/manager/state/store"
 	"github.com/docker/swarmkit/testutils"
+	gogotypes "github.com/gogo/protobuf/types"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1963,6 +1964,48 @@ func TestOldTasksNoCert(t *testing.T) {
 	resp, err := stream.Recv()
 	assert.Nil(t, resp)
 	assert.EqualError(t, err, "rpc error: code = PermissionDenied desc = Permission denied: unauthorized peer role: rpc error: code = PermissionDenied desc = no client certificates in request")
+}
+
+func TestChangeHeatbeatPeriod(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RateLimitPeriod = 0
+	gd := startDispatcher(t, cfg)
+	defer gd.Close()
+
+	// test updating dispatcher heartbeat period
+	d := gd.dispatcherServer
+	newPeriod := 10 * time.Second
+	require.NoError(t, gd.Store.Update(func(tx store.Tx) error {
+		cluster := store.GetCluster(tx, gd.testCA.Organization)
+		if cluster == nil {
+			return errors.New("no cluster")
+		}
+		cluster.Spec.Dispatcher.HeartbeatPeriod = gogotypes.DurationProto(newPeriod)
+		return store.UpdateCluster(tx, cluster)
+	}))
+	err := testutils.PollFuncWithTimeout(nil, func() error {
+		if newPeriod != d.nodes.periodChooser.period {
+			return fmt.Errorf("failed to update dispatcher heartbeat period")
+		}
+		return nil
+	}, 5*time.Second)
+	require.Equal(t, newPeriod, d.nodes.periodChooser.period)
+
+	// test after restarting dispatcher
+	err = d.Stop()
+	require.NoError(t, err)
+	d.Init(d.cluster, DefaultConfig(), d.dp, d.securityConfig)
+	go d.Run(context.Background())
+	err = testutils.PollFuncWithTimeout(nil, func() error {
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		if !d.isRunning() {
+			return fmt.Errorf("dispatcher is not running")
+		}
+		return nil
+	}, 5*time.Second)
+	assert.NoError(t, err)
+	require.Equal(t, newPeriod, d.nodes.periodChooser.period)
 }
 
 func TestClusterUpdatesSendMessages(t *testing.T) {
