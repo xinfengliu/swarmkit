@@ -785,15 +785,24 @@ func (s *Scheduler) scheduleNTasksOnSubtree(ctx context.Context, n int, taskGrou
 	tasksInUsableBranches := tree.tasks
 	var noRoom map[*decisionTree]struct{}
 
+	log.G(ctx).Infof("tree_pointer=%p, tasksInUsableBranches=%d", tree, tasksInUsableBranches)
+
 	// Try to make branches even until either all branches are
 	// full, or all tasks have been scheduled.
 	for tasksScheduled != n && len(noRoom) != len(tree.next) {
+		log.G(ctx).Infof("tree.next: %v", tree.next)
+		log.G(ctx).Infof("n=%d, tasksScheduled=%d, len(noRoom)=%d, len(tree.next)=%d", n, tasksScheduled, len(noRoom), len(tree.next))
 		desiredTasksPerBranch := (tasksInUsableBranches + n - tasksScheduled) / (len(tree.next) - len(noRoom))
 		remainder := (tasksInUsableBranches + n - tasksScheduled) % (len(tree.next) - len(noRoom))
 
-		for _, subtree := range tree.next {
+		for k, subtree := range tree.next {
+			log.G(ctx).Infof("key='%s', subtree_pointer= %p, subtree.next: %v", k, subtree, subtree.next)
+			log.G(ctx).Infof("desiredTasksPerBranch=%d, remainder=%d", desiredTasksPerBranch, remainder)
+			log.G(ctx).Infof("subtree tasks: %d, noRoom len: %d", subtree.tasks, len(noRoom))
+
 			if noRoom != nil {
 				if _, ok := noRoom[subtree]; ok {
+					log.G(ctx).Infof("No room for key: '%s', subtree_pointer=%p", k, subtree)
 					continue
 				}
 			}
@@ -803,13 +812,17 @@ func (s *Scheduler) scheduleNTasksOnSubtree(ctx context.Context, n int, taskGrou
 				if remainder > 0 {
 					tasksToAssign++
 				}
+				log.G(ctx).Infof("tasksToAssign: %d", tasksToAssign)
 				res := s.scheduleNTasksOnSubtree(ctx, tasksToAssign, taskGroup, subtree, schedulingDecisions, nodeLess)
+				log.G(ctx).Infof("tasksAssigned: %d", res)
 				if res < tasksToAssign {
 					if noRoom == nil {
 						noRoom = make(map[*decisionTree]struct{})
 					}
 					noRoom[subtree] = struct{}{}
 					tasksInUsableBranches -= subtreeTasks
+					log.G(ctx).Infof("Add subtree to noRoom, pointer=%p", subtree)
+					log.G(ctx).Infof("tasksInUsableBranches is now: %d", tasksInUsableBranches)
 				} else if remainder > 0 {
 					remainder--
 				}
